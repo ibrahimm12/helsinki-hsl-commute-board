@@ -20,25 +20,10 @@ variable "app_name" {
   }
 }
 
-variable "acr_name" {
-  description = "Globally unique lowercase Azure Container Registry name (5-50 alphanumeric characters)."
-  type        = string
-
-  validation {
-    condition     = length(var.acr_name) >= 5 && length(var.acr_name) <= 50 && can(regex("^[a-z0-9]+$", var.acr_name))
-    error_message = "acr_name must be 5-50 lowercase alphanumeric characters."
-  }
-}
-
 variable "container_image" {
-  description = "Full image reference to deploy. The workflow overrides this with an ACR image tagged by commit SHA."
+  description = "Full reference to the public GHCR image built by GitHub Actions."
   type        = string
-  default     = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-}
-
-variable "deployment_principal_object_id" {
-  description = "Object ID of the GitHub Actions service principal; granted AcrPush on this deployment's registry."
-  type        = string
+  default     = "ghcr.io/ibrahimm12/helsinki-hsl-commute-board:latest"
 }
 
 variable "digitransit_subscription_key" {
@@ -49,5 +34,16 @@ variable "digitransit_subscription_key" {
   validation {
     condition     = length(trimspace(var.digitransit_subscription_key)) > 0
     error_message = "Set the Digitransit key as the DIGITRANSIT_SUBSCRIPTION_KEY GitHub environment secret."
+  }
+}
+
+variable "alert_email" {
+  description = "Optional email recipient for the HTTP 5xx alert. Leave empty to create the alert without notifications."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.alert_email == "" || can(regex("^[^ @]+@[^ @]+\\.[^ @]+$", var.alert_email))
+    error_message = "alert_email must be empty or a valid email address."
   }
 }

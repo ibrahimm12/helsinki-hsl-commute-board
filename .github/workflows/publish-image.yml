@@ -1,0 +1,43 @@
+name: Publish container image
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/publish-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build and publish to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/helsinki-hsl-commute-board:latest
+            ghcr.io/${{ github.repository_owner }}/helsinki-hsl-commute-board:${{ github.sha }}
+
+      - name: Summarize image reference
+        run: echo "Published ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/helsinki-hsl-commute-board:${GITHUB_SHA}"

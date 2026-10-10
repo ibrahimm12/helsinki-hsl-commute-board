@@ -4,6 +4,8 @@ import { graphql, buildSchema } from 'graphql';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { logEvent, type LogContext } from './logger.js';
 import { nearbyStops, planJourneys, searchStops } from './transit.js';
 
 const schema = buildSchema(`
@@ -46,24 +48,43 @@ const schema = buildSchema(`
 `);
 
 const rootValue = {
-  nearbyStops: ({ radius }: { radius?: number }) => nearbyStops(radius ?? 1200),
-  searchStops: ({ search }: { search: string }) => searchStops(search),
+  nearbyStops: ({ radius }: { radius?: number }, context: LogContext) => nearbyStops(radius ?? 1200, context.requestId),
+  searchStops: ({ search }: { search: string }, context: LogContext) => searchStops(search, context.requestId),
   journeys: (args: {
     stopId: string;
     stopName: string;
     latitude: number;
     longitude: number;
     direction: 'TO_OFFICE' | 'FROM_OFFICE';
-  }) => planJourneys({
+  }, context: LogContext) => planJourneys({
     id: args.stopId,
     name: args.stopName,
     latitude: args.latitude,
     longitude: args.longitude,
-  }, args.direction),
+  }, args.direction, context.requestId),
 };
 
 const app = express();
 app.disable('x-powered-by');
+app.use((request, response, next) => {
+  const incomingRequestId = request.header('x-request-id');
+  const requestId = incomingRequestId && /^[A-Za-z0-9._:-]{1,128}$/.test(incomingRequestId)
+    ? incomingRequestId
+    : randomUUID();
+  const startedAt = performance.now();
+  response.locals.requestId = requestId;
+  response.setHeader('x-request-id', requestId);
+  response.on('finish', () => {
+    logEvent(response.statusCode >= 500 ? 'error' : response.statusCode >= 400 ? 'warn' : 'info', 'http.request.completed', {
+      requestId,
+      method: request.method,
+      path: request.path,
+      statusCode: response.statusCode,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+  });
+  next();
+});
 app.use(express.json({ limit: '32kb' }));
 
 app.get('/health', (_request, response) => response.json({ status: 'ok' }));
@@ -78,9 +99,17 @@ app.post('/graphql', async (request, response, next) => {
       schema,
       source: query,
       rootValue,
+      contextValue: { requestId: response.locals.requestId },
       variableValues: variables,
       operationName: typeof operationName === 'string' ? operationName : undefined,
     });
+    if (result.errors?.length) {
+      logEvent('warn', 'graphql.operation.completed_with_errors', {
+        requestId: response.locals.requestId,
+        operation: typeof operationName === 'string' ? operationName : 'anonymous',
+        errorCount: result.errors.length,
+      });
+    }
     response.json(result);
   } catch (error) {
     next(error);
@@ -95,7 +124,10 @@ if (existsSync(clientBuild)) {
 }
 
 app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-  console.error('Request failed:', error instanceof Error ? error.message : 'unknown error');
+  logEvent('error', 'http.request.failed', {
+    requestId: response.locals.requestId,
+    errorType: error instanceof Error ? error.name : 'UnknownError',
+  });
   response.status(500).json({ errors: [{ message: 'The request could not be completed.' }] });
 });
 

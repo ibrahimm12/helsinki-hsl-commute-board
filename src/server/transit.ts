@@ -1,4 +1,5 @@
 import type { Journey, JourneyLeg, Stop } from '../shared/types.js';
+import { logEvent } from './logger.js';
 
 const HQ = {
   label: 'Eficode — Pohjoinen Rautatiekatu 25',
@@ -43,11 +44,17 @@ function endpoint(): string {
   return process.env.DIGITRANSIT_API_URL || 'https://api.digitransit.fi/routing/v2/hsl/gtfs/v1';
 }
 
-async function queryDigitransit<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+async function queryDigitransit<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  operation = 'unknown',
+  requestId?: string,
+): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   const key = process.env.DIGITRANSIT_SUBSCRIPTION_KEY;
   if (key) headers['digitransit-subscription-key'] = key;
 
+  const startedAt = performance.now();
   let response: Response;
   try {
     response = await fetch(endpoint(), {
@@ -57,6 +64,12 @@ async function queryDigitransit<T>(query: string, variables?: Record<string, unk
       signal: AbortSignal.timeout(12_000),
     });
   } catch (error) {
+    logEvent('warn', 'digitransit.request.failed', {
+      requestId,
+      operation,
+      durationMs: Math.round(performance.now() - startedAt),
+      failureType: error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'network',
+    });
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw new Error('The HSL journey service took too long to respond. Please try again.');
     }
@@ -65,15 +78,44 @@ async function queryDigitransit<T>(query: string, variables?: Record<string, unk
 
   const payload = (await response.json().catch(() => null)) as GraphQLResponse<T> | null;
   if (!response.ok) {
+    logEvent('warn', 'digitransit.request.failed', {
+      requestId,
+      operation,
+      statusCode: response.status,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
     if (response.status === 401 || response.status === 403) {
       throw new Error('Digitransit rejected the request. Check the server-side API subscription key.');
     }
     throw new Error(`The HSL journey service returned HTTP ${response.status}.`);
   }
   if (payload?.errors?.length) {
+    logEvent('warn', 'digitransit.request.failed', {
+      requestId,
+      operation,
+      statusCode: response.status,
+      durationMs: Math.round(performance.now() - startedAt),
+      errorCount: payload.errors.length,
+      failureType: 'graphql',
+    });
     throw new Error(payload.errors.map((item) => item.message).join('; '));
   }
-  if (!payload?.data) throw new Error('The HSL journey service returned an empty response.');
+  if (!payload?.data) {
+    logEvent('warn', 'digitransit.request.failed', {
+      requestId,
+      operation,
+      statusCode: response.status,
+      durationMs: Math.round(performance.now() - startedAt),
+      failureType: 'empty_response',
+    });
+    throw new Error('The HSL journey service returned an empty response.');
+  }
+  logEvent('info', 'digitransit.request.completed', {
+    requestId,
+    operation,
+    statusCode: response.status,
+    durationMs: Math.round(performance.now() - startedAt),
+  });
   return payload.data;
 }
 
@@ -130,14 +172,14 @@ export function normalizeJourney(raw: UpstreamItinerary, index = 0): Journey | n
   };
 }
 
-export async function searchStops(search: string): Promise<Stop[]> {
+export async function searchStops(search: string, requestId?: string): Promise<Stop[]> {
   const term = search.trim();
   if (term.length < 2 || term.length > 80) return [];
-  const result = await queryDigitransit<{ stops?: Array<Record<string, unknown>> }>(STOP_SEARCH_QUERY, { search: term });
+  const result = await queryDigitransit<{ stops?: Array<Record<string, unknown>> }>(STOP_SEARCH_QUERY, { search: term }, 'search_stops', requestId);
   return (result.stops ?? []).map((stop) => normalizeStop(stop)).filter((stop): stop is Stop => stop !== null).slice(0, 12);
 }
 
-export async function nearbyStops(radius: number): Promise<Stop[]> {
+export async function nearbyStops(radius: number, requestId?: string): Promise<Stop[]> {
   const safeRadius = Math.min(3000, Math.max(200, Math.round(radius)));
   const query = `{
     stopsByRadius(lat: ${HQ.latitude}, lon: ${HQ.longitude}, radius: ${safeRadius}, first: 10) {
@@ -151,7 +193,7 @@ export async function nearbyStops(radius: number): Promise<Stop[]> {
   }`;
   const result = await queryDigitransit<{
     stopsByRadius?: { edges?: Array<{ node?: { stop?: Record<string, unknown>; distance?: number } }> };
-  }>(query);
+  }>(query, undefined, 'nearby_stops', requestId);
   return (result.stopsByRadius?.edges ?? [])
     .map(({ node }) => node?.stop ? normalizeStop(node.stop, Number(node.distance)) : null)
     .filter((stop): stop is Stop => stop !== null);
@@ -160,6 +202,7 @@ export async function nearbyStops(radius: number): Promise<Stop[]> {
 export async function planJourneys(
   stop: Pick<Stop, 'id' | 'name' | 'latitude' | 'longitude'>,
   direction: 'TO_OFFICE' | 'FROM_OFFICE',
+  requestId?: string,
 ): Promise<Journey[]> {
   if (!stop.id.startsWith('HSL:') || !stop.name.trim()) throw new Error('Choose a valid HSL stop.');
   if (
@@ -203,7 +246,7 @@ export async function planJourneys(
 
   const result = await queryDigitransit<{
     planConnection?: { edges?: Array<{ node?: UpstreamItinerary }> };
-  }>(query);
+  }>(query, undefined, 'plan_journeys', requestId);
   return (result.planConnection?.edges ?? [])
     .map((edge, index) => edge.node ? normalizeJourney(edge.node, index) : null)
     .filter((journey): journey is Journey => journey !== null)

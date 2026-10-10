@@ -7,10 +7,12 @@ output "container_app_name" {
   value = azurerm_container_app.app.name
 }
 
-output "acr_name" {
-  value = azurerm_container_registry.app.name
+output "log_analytics_workspace_id" {
+  description = "Resource ID of the workspace used by Container Apps logs and the operations workbook."
+  value       = azurerm_log_analytics_workspace.app.id
 }
 
-output "acr_login_server" {
-  value = azurerm_container_registry.app.login_server
+output "observability_workbook_id" {
+  description = "Resource ID of the Azure Monitor operations workbook."
+  value       = azurerm_application_insights_workbook.app.id
 }

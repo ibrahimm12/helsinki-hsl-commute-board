@@ -1,6 +1,6 @@
 resource_group_name              = "RG_MohammedIbrahim"
 location                         = "swedencentral"
-app_name                         = "eficode-timetables-change-me"
-acr_name                         = "eficodetimetablechange"
-deployment_principal_object_id   = "00000000-0000-0000-0000-000000000000"
+app_name                         = "hsl-commute-board-ibrahimm12"
+container_image                  = "ghcr.io/ibrahimm12/helsinki-hsl-commute-board:latest"
+alert_email                      = ""
 # Supply the API key through TF_VAR_digitransit_subscription_key instead of saving it here.

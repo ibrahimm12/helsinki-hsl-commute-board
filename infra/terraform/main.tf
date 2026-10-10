@@ -17,19 +17,15 @@ resource "azurerm_container_app_environment" "app" {
   log_analytics_workspace_id = azurerm_log_analytics_workspace.app.id
 }
 
-resource "azurerm_container_registry" "app" {
-  name                = var.acr_name
-  resource_group_name = data.azurerm_resource_group.app.name
-  location            = var.location
-  sku                 = "Basic"
-  admin_enabled       = false
-}
+resource "azurerm_monitor_diagnostic_setting" "container_apps_http" {
+  name                           = "${var.app_name}-http-logs"
+  target_resource_id             = azurerm_container_app_environment.app.id
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.app.id
+  log_analytics_destination_type = "Dedicated"
 
-resource "azurerm_role_assignment" "github_acr_push" {
-  scope                = azurerm_container_registry.app.id
-  role_definition_name = "AcrPush"
-  principal_id         = var.deployment_principal_object_id
-  principal_type       = "ServicePrincipal"
+  enabled_log {
+    category = "HTTPLogs"
+  }
 }
 
 resource "azurerm_container_app" "app" {
@@ -38,22 +34,13 @@ resource "azurerm_container_app" "app" {
   container_app_environment_id = azurerm_container_app_environment.app.id
   revision_mode                = "Single"
 
-  identity {
-    type = "SystemAssigned"
-  }
-
-  registry {
-    server   = azurerm_container_registry.app.login_server
-    identity = "system"
-  }
-
   secret {
     name  = "digitransit-subscription-key"
     value = var.digitransit_subscription_key
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 2
 
     container {
@@ -90,14 +77,4 @@ resource "azurerm_container_app" "app" {
     managed-by  = "terraform"
   }
 
-  depends_on = [
-    azurerm_role_assignment.github_acr_push,
-  ]
-}
-
-resource "azurerm_role_assignment" "app_acr_pull" {
-  scope                = azurerm_container_registry.app.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_container_app.app.identity[0].principal_id
-  principal_type       = "ServicePrincipal"
 }
