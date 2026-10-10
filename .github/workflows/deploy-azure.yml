@@ -1,0 +1,104 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'infra/terraform/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-azure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Provision and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_resource_group_name: ${{ vars.AZURE_RESOURCE_GROUP }}
+      TF_VAR_location: ${{ vars.AZURE_LOCATION }}
+      TF_VAR_app_name: ${{ vars.AZURE_APP_NAME }}
+      TF_VAR_acr_name: ${{ vars.AZURE_ACR_NAME }}
+      TF_VAR_deployment_principal_object_id: ${{ vars.AZURE_PRINCIPAL_OBJECT_ID }}
+      TF_VAR_digitransit_subscription_key: ${{ secrets.DIGITRANSIT_SUBSCRIPTION_KEY }}
+      TF_IN_AUTOMATION: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Initialize Terraform with Azure Blob state
+        run: >-
+          terraform -chdir=infra/terraform init
+          -backend-config="resource_group_name=${{ vars.TF_STATE_RESOURCE_GROUP }}"
+          -backend-config="storage_account_name=${{ vars.TF_STATE_STORAGE_ACCOUNT }}"
+          -backend-config="container_name=${{ vars.TF_STATE_CONTAINER }}"
+          -backend-config="key=timetables.tfstate"
+          -backend-config="use_oidc=true"
+          -backend-config="use_azuread_auth=true"
+
+      - name: Bootstrap Azure resources on first deployment
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_APP_NAME: ${{ vars.AZURE_APP_NAME }}
+        run: |
+          az group show --name "$AZURE_RESOURCE_GROUP" --output none
+          if ! az containerapp show --name "$AZURE_APP_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --output none 2>/dev/null; then
+            terraform -chdir=infra/terraform apply -auto-approve \
+              -var="container_image=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+          fi
+
+      - name: Wait for ACR role assignment
+        env:
+          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+        run: |
+          for attempt in {1..12}; do
+            if az acr login --name "$AZURE_ACR_NAME"; then
+              exit 0
+            fi
+            echo "Waiting for AcrPush permission to propagate (attempt $attempt/12)..."
+            sleep 10
+          done
+          echo "Could not authenticate to Azure Container Registry. Check the AcrPush role assignment."
+          exit 1
+
+      - name: Build and push commit-tagged image
+        env:
+          AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+        run: |
+          LOGIN_SERVER="$(az acr show --name "$AZURE_ACR_NAME" --query loginServer --output tsv)"
+          IMAGE="$LOGIN_SERVER/${{ vars.AZURE_APP_NAME }}:${GITHUB_SHA}"
+          docker build --pull --tag "$IMAGE" .
+          docker push "$IMAGE"
+          echo "TF_VAR_container_image=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy image with Terraform
+        run: terraform -chdir=infra/terraform apply -auto-approve
+
+      - name: Report application URL
+        run: terraform -chdir=infra/terraform output -raw app_url

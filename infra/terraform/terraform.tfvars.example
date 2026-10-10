@@ -1,0 +1,6 @@
+resource_group_name              = "RG_MohammedIbrahim"
+location                         = "swedencentral"
+app_name                         = "eficode-timetables-change-me"
+acr_name                         = "eficodetimetablechange"
+deployment_principal_object_id   = "00000000-0000-0000-0000-000000000000"
+# Supply the API key through TF_VAR_digitransit_subscription_key instead of saving it here.
