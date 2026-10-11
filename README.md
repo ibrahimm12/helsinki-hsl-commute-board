@@ -152,7 +152,7 @@ Before running it, ensure the Digitransit key pasted into chat has been rotated 
 
 ```powershell
 az login
-az account set --subscription cee91bbe-6e6f-4ab1-83e0-4874489dd138
+az account set --subscription SUBSCRIPTIONID
 $rg = "RG_MohammedIbrahim"
 $stateStorage = "hslstatecc1d8394"
 $userObjectId = az ad signed-in-user show --query id --output tsv
