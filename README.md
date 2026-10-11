@@ -45,7 +45,6 @@ Screenshot captured from the running application with live Digitransit journey d
 flowchart LR
 	commuter[Commuter browser] -->|HTTPS| app[Azure Container App\nReact UI + Node GraphQL API]
 	app -->|GraphQL query + subscription key| hsl[Digitransit HSL Routing API]
-	app -->|health check| health[/health]
 
 	subgraph delivery[GitHub Actions delivery]
 		source[Push to main or master] --> ci[CI checks\ntests, types, build]
