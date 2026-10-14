@@ -1,0 +1,17 @@
+{
+  "voice": "Microsoft Hazel Desktop",
+  "language": "en-GB",
+  "segments": [
+    { "start": 0, "window": 8, "text": "Welcome to the Helsinki commute board. This sample-data walkthrough shows how to plan your journey." },
+    { "start": 8, "window": 7, "text": "Choose a nearby stop. The picker shows its name, code, and distance from the office." },
+    { "start": 15, "window": 10, "text": "Compare departures, countdowns, tram routes, and arrivals. Travel duration appears on the right. The first result highlights your next journey." },
+    { "start": 25, "window": 8, "text": "Route numbers distinguish the connections. The summary identifies direct journeys, transfers, or walking options." },
+    { "start": 33, "window": 9, "text": "Switch direction to plan the return trip. Your selected stop becomes the destination, with updated journey options." },
+    { "start": 42, "window": 8, "text": "Search for another stop by name. Here, we select the railway station from the results." },
+    { "start": 50, "window": 7, "text": "The browser remembers your stop and direction, ready for your next visit." },
+    { "start": 57, "window": 8, "text": "Refresh to request journeys again. The board also updates automatically every minute." },
+    { "start": 65, "window": 9, "text": "React powers the interface. The graph Q L server calls Digitransit, keeping your subscription key outside browser code." },
+    { "start": 74, "window": 11, "text": "The repository includes Docker, GitHub Actions, Terraform for Azure, and observability configuration. This recording does not demonstrate a cloud deployment." },
+    { "start": 85, "window": 9.5, "text": "Explore the commute board repository on GitHub. These responses are simulated, not live schedules. Thank you for watching." }
+  ]
+}
