@@ -8,7 +8,9 @@ The screenshot shows the product UI with example journey data. HSL journey data 
 
 ## Website Walkthrough
 
-[Watch the 95-second explained website demo (WebM)](docs/videos/assignment-timetables-demo.webm)
+https://github.com/user-attachments/assets/fde73329-4b76-4658-a3ef-413ddd29ff54
+
+[Download the narrated 95-second demo (WebM)](docs/videos/assignment-timetables-demo.webm)
 
 The walkthrough starts on the fully loaded website and uses chapter captions and British English synthetic narration (Microsoft Hazel) to explain stop selection, departure countdowns, routes and transfers, arrival times, direction switching, search, saved preferences, and refresh. Closing chapters explain the React/GraphQL architecture and the repository's Docker, CI, Terraform, and observability configuration. It uses simulated journey responses, labelled throughout as sample data, and does not demonstrate a live HSL connection or Azure deployment. The timed narration transcript is available in [narration.json](docs/videos/narration.json).
 
